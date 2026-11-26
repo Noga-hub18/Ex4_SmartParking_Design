@@ -1,0 +1,229 @@
+@startuml
+
+enum UserRole {
+  STUDENT
+  FACULTY
+  SECURITY_GUARD
+  TRAFFIC_ADMIN
+}
+
+enum SpotStatus {
+  AVAILABLE
+  RESERVED
+  OCCUPIED
+}
+
+enum ReservationStatus {
+  ACTIVE
+  FULFILLED
+  NO_SHOW_REVOKED
+}
+
+enum AppealDecision {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+class StudentDashboardUI <<boundary>> {
+  +String selectedZone
+  +void displayAvailableSpots()
+  +void onReserveSpotClicked(String spotCode, String licensePlate)
+  +void onSubmitAppealClicked()
+  +void displayCountdown(int minutes)
+  +void showErrorAlert(String message)
+}
+
+class GuardTerminalUI <<boundary>> {
+  +void onLogViolationClicked()
+  +void onIssueGuestQrClicked()
+}
+
+class AdminAppealUI <<boundary>> {
+  +void onReviewAppealClicked()
+}
+
+class LprGateBoundary <<boundary>> {
+  +void onPlateScanned()
+  +void onGuestQrScanned()
+  +void openBarrierGate()
+  +void denyEntry()
+}
+
+class PaymentGatewayBoundary <<boundary>> {
+  +boolean authorizeCreditCard()
+}
+
+class SmsGatewayBoundary <<boundary>> {
+  +void sendSmsAlert(String phoneNumber, String message)
+}
+
+class ReservationControl <<control>> {
+  +int reservationWindowMin
+  +void findAvailableSpots()
+  +Reservation reserveSpot(long userId, String spotCode, String licensePlate)
+  +void processLprGateEntry(String licensePlate, String zoneName)
+  +void validateGuestQrEntry()
+  +void revokeExpiredReservations()
+}
+
+class EvBillingControl <<control>> {
+  +int idleGraceMin
+  +double idleRateNisPerHour
+  +void authorizeEvPayment()
+  +void notifyChargeComplete()
+  +void applyIdlePenalties()
+}
+
+class EnforcementControl <<control>> {
+  +void issueGuestPass()
+  +void logSevereViolation()
+  +void submitDigitalAppeal()
+  +void reviewDigitalAppeal()
+}
+
+abstract class User <<entity>> {
+  +long userId
+  +String fullName
+  +String email
+  +String phoneNumber
+  +UserRole role
+  +int noShowWarnings
+  +void incrementNoShowWarnings()
+}
+
+class Student <<entity>> {
+  +long studentId
+  +boolean activePermit
+  +boolean hasActivePermit()
+}
+
+class Faculty <<entity>> {
+  +long facultyId
+  +String department
+  +boolean activePermit
+  +boolean hasActivePermit()
+}
+
+class SecurityGuard <<entity>> {
+  +String badgeNumber
+}
+
+class TrafficAdministrator <<entity>> {
+  +String adminOfficeId
+}
+
+class GuestPass <<entity>> {
+  +String qrToken
+  +String guestPlate
+  +LocalDateTime expiresAt
+  +boolean isUsed
+  +boolean isValid()
+  +void markUsed()
+}
+
+class Vehicle <<entity>> {
+  +String licensePlate
+}
+
+class ParkingZone <<entity>> {
+  +long zoneId
+  +String zoneName
+  +int totalCapacity
+}
+
+class ParkingSpot <<entity>> {
+  +long spotId
+  +boolean isEvCharger
+  +SpotStatus status
+  +long version
+  +boolean isAvailable()
+  +boolean tryReserve(long expectedVersion)
+  +void setStatus(SpotStatus status)
+}
+
+class Reservation <<entity>> {
+  +long reservationId
+  +LocalDateTime createdAt
+  +LocalDateTime expiresAt
+  +ReservationStatus status
+  +boolean isWithin15MinWindow()
+  +void setStatus(ReservationStatus status)
+}
+
+class PaymentAuthorization <<entity>> {
+  +String authId
+  +String gatewayToken
+  +BigDecimal authorizedAmount
+  +LocalDateTime authorizedAt
+}
+
+class ChargingSession <<entity>> {
+  +long sessionId
+  +LocalDateTime completedAt
+  +boolean isPluggedIn
+  +boolean isPhysicallyOccupied
+  +BigDecimal idlePenaltyNis
+  +boolean isIdleOver30Minutes()
+  +void updateOccupancyState(boolean isPluggedIn, boolean isPhysicallyOccupied)
+}
+
+class Violation <<entity>> {
+  +long violationId
+  +String reason
+  +BigDecimal fineAmount
+  +boolean isPaid
+  +void cancelFine()
+}
+
+class Appeal <<entity>> {
+  +long appealId
+  +String reasonText
+  +AppealDecision decision
+  +void setDecision(AppealDecision decision)
+}
+
+User <|-- Student
+User <|-- Faculty
+User <|-- SecurityGuard
+User <|-- TrafficAdministrator
+
+ParkingZone "1" o-- "1..*" ParkingSpot : contains
+
+Reservation "1" *-- "0..1" PaymentAuthorization : requires for EV
+Reservation "1" *-- "0..1" ChargingSession : initiates
+Violation "1" *-- "0..1" Appeal : contested by
+
+User "1" -- "0..*" Vehicle : owns
+Vehicle "1" -- "0..*" Reservation : booked for
+ParkingSpot "1" -- "0..*" Reservation : assigned to
+Vehicle "1" -- "0..*" Violation : receives
+SecurityGuard "0..1" -- "0..*" Violation : logs
+SecurityGuard "1" -- "0..*" GuestPass : issues
+TrafficAdministrator "0..1" -- "0..*" Appeal : reviews
+
+StudentDashboardUI -- ReservationControl
+StudentDashboardUI -- EnforcementControl
+GuardTerminalUI -- EnforcementControl
+AdminAppealUI -- EnforcementControl
+LprGateBoundary -- ReservationControl
+PaymentGatewayBoundary -- EvBillingControl
+SmsGatewayBoundary -- EvBillingControl
+
+ReservationControl -- User
+ReservationControl -- Vehicle
+ReservationControl -- ParkingZone
+ReservationControl -- ParkingSpot
+ReservationControl -- Reservation
+ReservationControl -- GuestPass
+
+EvBillingControl -- PaymentAuthorization
+EvBillingControl -- ChargingSession
+EvBillingControl -- Violation
+
+EnforcementControl -- Vehicle
+EnforcementControl -- GuestPass
+EnforcementControl -- Violation
+EnforcementControl -- Appeal
+
+@enduml

@@ -1,0 +1,43 @@
+@startuml
+actor Student
+boundary ":StudentDashboardUI" as UI
+control ":ReservationControl" as Ctrl
+entity "spot : ParkingSpot" as Spot
+entity "res : Reservation" as Res
+boundary ":LprGateBoundary" as LPR
+
+Student -> UI : onReserveSpotClicked("EV-04", "12-345-67")
+UI -> Ctrl : reserveSpot(userId, "EV-04", "12-345-67")
+Ctrl -> Spot : isAvailable()
+
+alt available == true
+  Ctrl -> Spot : tryReserve(expectedVersion)
+  alt acquired == true
+    create Res
+    Ctrl -> Res : <<create>> Reservation(...)
+    Res --> Ctrl : res
+    Ctrl --> UI : res
+    UI -> UI : displayCountdown(15)
+  else Concurrent Race Condition
+    Ctrl --> UI : reservation failed
+    UI -> UI : showErrorAlert("Spot just reserved by another user")
+  end
+else available == false
+  Ctrl --> UI : spot unavailable
+  UI -> UI : showErrorAlert("Spot unavailable")
+end
+
+== Within 15 Minutes: Vehicle Arrives at Entrance Gate ==
+
+LPR -> Ctrl : processLprGateEntry("12-345-67", "EV Zone")
+Ctrl -> Res : isWithin15MinWindow()
+
+alt valid == true
+  Ctrl -> Res : setStatus(FULFILLED)
+  Ctrl -> LPR : openBarrierGate()
+else No-Show > 15 Min
+  Ctrl -> Res : setStatus(NO_SHOW_REVOKED)
+  destroy Res
+  Ctrl -> LPR : denyEntry()
+end
+@enduml
